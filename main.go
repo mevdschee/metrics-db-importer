@@ -2,7 +2,6 @@ package main
 
 import (
 	"database/sql"
-	"encoding/gob"
 	"flag"
 	"fmt"
 	"log"
@@ -183,13 +182,12 @@ func getMetrics(url string) (*statistics.Statistics, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("http status: %v", resp.StatusCode)
 	}
-	dec := gob.NewDecoder(resp.Body)
-	s := statistics.Statistics{}
-	err = dec.Decode(&s)
+	s := statistics.New()
+	err = s.ReadGob(resp)
 	if err != nil {
 		return nil, fmt.Errorf("http read body: %v", err)
 	}
-	return &s, nil
+	return s, nil
 }
 
 func main() {

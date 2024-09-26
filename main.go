@@ -130,6 +130,11 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 	}
 	defer db.Close()
 
+	txn, err := db.Begin()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	now := time.Now()
 	datetime := now.Format(time.RFC3339)
 	dateString := now.Format("2006_01")
@@ -139,23 +144,18 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 		tagName := safe(parts[1])
 
 		var tableName string
-
-		txn, err := db.Begin()
-		if err != nil {
-			log.Fatal(err)
-		}
 		tableName = fmt.Sprintf("%s_summary_by_%s_for_%s", name, tagName, dateString)
 		addSummaryTable(txn, ss, tableName, tagName, datetime)
 		tableName = fmt.Sprintf("%s_histogram_for_%s", name, dateString)
 		addHistogramTable(txn, stats.Buckets, ss, tableName, datetime)
 		tableName = fmt.Sprintf("%s_totals_for_%s", name, dateString)
 		addTotalsTable(txn, ss, tableName, datetime)
-		err = txn.Commit()
-		if err != nil {
-			log.Fatal(err)
-		}
 	}
 
+	err = txn.Commit()
+	if err != nil {
+		log.Fatal(err)
+	}
 }
 
 func getMetrics(url string) (*statistics.Statistics, error) {

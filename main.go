@@ -21,6 +21,108 @@ func safe(str string) string {
 	return re.ReplaceAllString(str, "")
 }
 
+func addSummaryTable(txn *sql.Tx, ss statistics.StatisticSet, tableName, tagName, datetime string) {
+	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"%s\" VARCHAR(255), \"duration\" DOUBLE PRECISION, \"count\" BIGINT);", tableName, tagName)
+
+	_, err := txn.Exec(createSql)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn(tableName, "time", tagName, "duration", "count"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for tagValue, count := range ss.Counters {
+		duration := ss.Durations[tagValue]
+		_, err = stmt.Exec(datetime, tagValue, duration, count)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func addHistogramTable(txn *sql.Tx, buckets []statistics.Bucket, ss statistics.StatisticSet, tableName, datetime string) {
+	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"duration\" DOUBLE PRECISION, \"count\" BIGINT);", tableName)
+
+	_, err := txn.Exec(createSql)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn(tableName, "time", "duration", "count"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	for _, b := range buckets {
+		duration := b.Value
+		count := ss.Buckets[b.Name]
+		_, err = stmt.Exec(datetime, duration, count)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func addTotalsTable(txn *sql.Tx, buckets []statistics.Bucket, ss statistics.StatisticSet, tableName, datetime string) {
+	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"duration\" DOUBLE PRECISION, \"count\" BIGINT);", tableName)
+
+	_, err := txn.Exec(createSql)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stmt, err := txn.Prepare(pq.CopyIn(tableName, "time", "duration", "count"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	totalCount := uint64(0)
+	totalDuration := float64(0)
+	for tagValue, count := range ss.Counters {
+		duration := ss.Durations[tagValue]
+		totalDuration += duration
+		totalCount += count
+	}
+
+	_, err = stmt.Exec(datetime, totalDuration, totalCount)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = stmt.Exec()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = stmt.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 func updateDatabase(driverName, dataSourceName string, stats *statistics.Statistics) {
 	db, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
@@ -35,49 +137,25 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 		parts := strings.SplitN(key, "|", 2)
 		name := safe(parts[0])
 		tagName := safe(parts[1])
-		tableName := fmt.Sprintf("%s_by_%s_in_%s", name, tagName, dateString)
-		log.Println(tableName)
-		createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"%s\" VARCHAR(255), \"count\" BIGINT, \"duration\" DOUBLE PRECISION);", tableName, tagName)
 
-		_, err := db.Exec(createSql)
-		if err != nil {
-			log.Fatal(err)
-		}
+		var tableName string
 
 		txn, err := db.Begin()
 		if err != nil {
 			log.Fatal(err)
 		}
-
-		stmt, err := txn.Prepare(pq.CopyIn(tableName, "time", tagName, "count", "duration"))
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		for tagValue, count := range ss.Counters {
-			duration := ss.Durations[tagValue]
-			_, err = stmt.Exec(datetime, tagValue, count, duration)
-			if err != nil {
-				log.Fatal(err)
-			}
-
-		}
-
-		_, err = stmt.Exec()
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		err = stmt.Close()
-		if err != nil {
-			log.Fatal(err)
-		}
-
+		tableName = fmt.Sprintf("%s_summary_by_%s_for_%s", name, tagName, dateString)
+		addSummaryTable(txn, ss, tableName, tagName, datetime)
+		tableName = fmt.Sprintf("%s_histogram_for_%s", name, dateString)
+		addHistogramTable(txn, stats.Buckets, ss, tableName, datetime)
+		tableName = fmt.Sprintf("%s_totals_for_%s", name, dateString)
+		addTotalsTable(txn, stats.Buckets, ss, tableName, datetime)
 		err = txn.Commit()
 		if err != nil {
 			log.Fatal(err)
 		}
 	}
+
 }
 
 func getMetrics(url string) (*statistics.Statistics, error) {

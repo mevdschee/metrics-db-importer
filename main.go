@@ -152,7 +152,7 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 
 	now := time.Now()
 	datetime := now.Format(time.RFC3339)
-	dateString := now.Format("2006_01")
+	dateString := now.Format("2006_01_02")
 	for key, ss := range stats.Names {
 		parts := strings.SplitN(key, "|", 2)
 		name := safe(parts[0])

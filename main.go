@@ -23,8 +23,13 @@ func safe(str string) string {
 
 func addSummaryTable(txn *sql.Tx, ss statistics.StatisticSet, tableName, tagName, datetime string) {
 	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"%s\" VARCHAR(255), \"duration\" DOUBLE PRECISION, \"count\" BIGINT);", tableName, tagName)
-
 	_, err := txn.Exec(createSql)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	indexSql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS \"%s_idx\" ON \"%s\"(\"time\", \"%s\");", tableName, tableName, tagName)
+	_, err = txn.Exec(indexSql)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -55,8 +60,13 @@ func addSummaryTable(txn *sql.Tx, ss statistics.StatisticSet, tableName, tagName
 
 func addHistogramTable(txn *sql.Tx, buckets []statistics.Bucket, ss statistics.StatisticSet, tableName, datetime string) {
 	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"duration\" DOUBLE PRECISION, \"count\" BIGINT);", tableName)
-
 	_, err := txn.Exec(createSql)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	indexSql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS \"%s_idx\" ON \"%s\"(\"time\", \"duration\");", tableName, tableName)
+	_, err = txn.Exec(indexSql)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -88,8 +98,13 @@ func addHistogramTable(txn *sql.Tx, buckets []statistics.Bucket, ss statistics.S
 
 func addTotalsTable(txn *sql.Tx, ss statistics.StatisticSet, tableName, datetime string) {
 	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"duration\" DOUBLE PRECISION, \"count\" BIGINT);", tableName)
-
 	_, err := txn.Exec(createSql)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	indexSql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS \"%s_idx\" ON \"%s\"(\"time\");", tableName, tableName)
+	_, err = txn.Exec(indexSql)
 	if err != nil {
 		log.Fatal(err)
 	}

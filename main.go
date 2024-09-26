@@ -86,7 +86,7 @@ func addHistogramTable(txn *sql.Tx, buckets []statistics.Bucket, ss statistics.S
 	}
 }
 
-func addTotalsTable(txn *sql.Tx, buckets []statistics.Bucket, ss statistics.StatisticSet, tableName, datetime string) {
+func addTotalsTable(txn *sql.Tx, ss statistics.StatisticSet, tableName, datetime string) {
 	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" TIMESTAMPTZ NOT NULL, \"duration\" DOUBLE PRECISION, \"count\" BIGINT);", tableName)
 
 	_, err := txn.Exec(createSql)
@@ -149,7 +149,7 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 		tableName = fmt.Sprintf("%s_histogram_for_%s", name, dateString)
 		addHistogramTable(txn, stats.Buckets, ss, tableName, datetime)
 		tableName = fmt.Sprintf("%s_totals_for_%s", name, dateString)
-		addTotalsTable(txn, stats.Buckets, ss, tableName, datetime)
+		addTotalsTable(txn, ss, tableName, datetime)
 		err = txn.Commit()
 		if err != nil {
 			log.Fatal(err)

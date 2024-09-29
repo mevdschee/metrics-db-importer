@@ -347,7 +347,7 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 	}
 	err = insertRecords(txn, driverName, stats)
 	if err != nil {
-		log.Fatalf("error: %v", err)
+		log.Printf("error: %v", err)
 		txn.Rollback()
 		err = createTables(db, driverName, stats)
 		if err != nil {

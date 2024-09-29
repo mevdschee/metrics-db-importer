@@ -360,6 +360,7 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 		err = insertRecords(txn, driverName, stats)
 		if err != nil {
 			txn.Rollback()
+			return err
 		} else {
 			txn.Commit()
 		}

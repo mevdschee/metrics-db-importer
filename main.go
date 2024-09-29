@@ -406,9 +406,11 @@ func main() {
 		if err != nil {
 			log.Println(err)
 		}
-		err = updateDatabase(*driverName, *dataSourceName, stats, *retentionInDays)
-		if err != nil {
-			log.Println(err)
+		if stats != nil {
+			err = updateDatabase(*driverName, *dataSourceName, stats, *retentionInDays)
+			if err != nil {
+				log.Println(err)
+			}
 		}
 		time.Sleep(*scrapeEvery)
 	}

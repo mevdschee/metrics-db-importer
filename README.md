@@ -1,6 +1,12 @@
 # metrics-db-importer
 
-Import metrics into a RDBMS such as MariaDB or PostgreSQL.
+Import metrics into a RDBMS such as MariaDB or PostgreSQL. Read the blog post:
+
+[https://tqdev.com/2024-high-frequency-metrics-in-php-using-tcp-sockets](https://tqdev.com/2024-high-frequency-metrics-in-php-using-tcp-sockets)
+
+and
+
+[https://tqdev.com/2024-distributed-metrics-in-php-using-go-and-gob](https://tqdev.com/2024-distributed-metrics-in-php-using-go-and-gob)
 
 ### Usage
 

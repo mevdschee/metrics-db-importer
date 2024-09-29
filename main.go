@@ -397,8 +397,8 @@ func main() {
 	retentionInDays := flag.Int("retention", 30, "retention in days")
 	//driverName := flag.String("db", "postgres", "")
 	//dataSourceName := flag.String("dsn", "dbname=metrics sslmode=disable user=metrics password=metrics search_path=public", "")
-	driverName := flag.String("db", "mysql", "")
-	dataSourceName := flag.String("dsn", "metrics:metrics@unix(/var/run/mysqld/mysqld.sock)/metrics", "")
+	driverName := flag.String("db", "mysql", "drivername, either 'postgres' or 'mysql'")
+	dataSourceName := flag.String("dsn", "metrics:metrics@unix(/var/run/mysqld/mysqld.sock)/metrics", "dsn for the driver, see go sql documentation")
 	flag.Parse()
 
 	for {

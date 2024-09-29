@@ -400,7 +400,8 @@ func main() {
 	dataSourceName := flag.String("dsn", "metrics:metrics@unix(/var/run/mysqld/mysqld.sock)/metrics", "dsn for the driver, see go sql documentation")
 	flag.Parse()
 
-	for {
+	ticker := time.NewTicker(*scrapeEvery)
+	for range ticker.C {
 		stats, err := getMetrics(*urlToScrape)
 		if err != nil {
 			log.Println(err)
@@ -411,6 +412,5 @@ func main() {
 				log.Println(err)
 			}
 		}
-		time.Sleep(*scrapeEvery)
 	}
 }

@@ -10,7 +10,7 @@ and
 
 ### Usage
 
-    Usage of timescaledb-importer:
+    Usage of metrics-db-importer:
         -db string
                 drivername, either 'postgres' or 'mysql' (default "mysql")
         -dsn string

@@ -20,6 +20,73 @@ func safe(str string) string {
 	return re.ReplaceAllString(str, "")
 }
 
+func createCountsTable(db *sql.DB, driverName, name, labelName string) error {
+	tableName := fmt.Sprintf("%s_count_by_%s", name, labelName)
+	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" timestamptz NOT NULL, \"%s\" varchar(255), \"count\" bigint);", tableName, labelName)
+	if driverName == "mysql" {
+		createSql = strings.ReplaceAll(createSql, "\"", "`")
+		createSql = strings.ReplaceAll(createSql, "timestamptz", "timestamp")
+	}
+	_, err := db.Exec(createSql)
+	if err != nil {
+		return err
+	}
+	indexSql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS \"%s_idx\" ON \"%s\"(\"time\", \"%s\");", tableName, tableName, labelName)
+	if driverName == "mysql" {
+		indexSql = strings.ReplaceAll(indexSql, "\"", "`")
+	}
+	_, err = db.Exec(indexSql)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func insertCountsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
+	sqlStr := fmt.Sprintf("INSERT INTO `%s_count_by_%s` (`time`, `%s`, `count`) VALUES ", name, labelName, labelName)
+	vals := []interface{}{}
+	for labelValue, count := range ss.Counts {
+		sqlStr += "(?, ?, ?),"
+		vals = append(vals, datetime, labelValue, count)
+	}
+	sqlStr = strings.TrimSuffix(sqlStr, ",")
+	stmt, err := txn.Prepare(sqlStr)
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec(vals...)
+	if err != nil {
+		return err
+	}
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func insertCountsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
+	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf("%s_count_by_%s", name, labelName), "time", labelName, "count"))
+	if err != nil {
+		return err
+	}
+	for labelValue, count := range ss.Counts {
+		_, err = stmt.Exec(datetime, labelValue, count)
+		if err != nil {
+			return err
+		}
+	}
+	_, err = stmt.Exec()
+	if err != nil {
+		return err
+	}
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func createSummaryTable(db *sql.DB, driverName, name, labelName string) error {
 	tableName := fmt.Sprintf("%s_by_%s", name, labelName)
 	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" timestamptz NOT NULL, \"%s\" varchar(255), \"duration\" double precision, \"count\" bigint);", tableName, labelName)
@@ -236,13 +303,83 @@ func insertTotalsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, datetim
 	return nil
 }
 
+func createTotalCountsTable(db *sql.DB, driverName string, name string) error {
+	tableName := fmt.Sprintf("%s_count_totals", name)
+	createSql := fmt.Sprintf("CREATE TABLE IF NOT EXISTS \"%s\" (\"time\" timestamptz NOT NULL, \"count\" bigint);", tableName)
+	if driverName == "mysql" {
+		createSql = strings.ReplaceAll(createSql, "\"", "`")
+		createSql = strings.ReplaceAll(createSql, "timestamptz", "timestamp")
+	}
+	_, err := db.Exec(createSql)
+	if err != nil {
+		return err
+	}
+	indexSql := fmt.Sprintf("CREATE INDEX IF NOT EXISTS \"%s_idx\" ON \"%s\"(\"time\");", tableName, tableName)
+	if driverName == "mysql" {
+		indexSql = strings.ReplaceAll(indexSql, "\"", "`")
+	}
+	_, err = db.Exec(indexSql)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func insertTotalCountsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, datetime string) error {
+	sqlStr := fmt.Sprintf("INSERT INTO `%s_count_totals` (`time`, `count`) VALUES (?, ?)", name)
+	totalCount := uint64(0)
+	for _, count := range ss.Counts {
+		totalCount += count
+	}
+	stmt, err := txn.Prepare(sqlStr)
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec(datetime, totalCount)
+	if err != nil {
+		return err
+	}
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func insertTotalCountsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, datetime string) error {
+	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf("%s_count_totals", name), "time", "count"))
+	if err != nil {
+		return err
+	}
+	totalCount := uint64(0)
+	for _, count := range ss.Counts {
+		totalCount += count
+	}
+	_, err = stmt.Exec(datetime, totalCount)
+	if err != nil {
+		return err
+	}
+	_, err = stmt.Exec()
+	if err != nil {
+		return err
+	}
+	err = stmt.Close()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func createTables(db *sql.DB, driverName string, stats *statistics.Statistics) error {
 	for key := range stats.Names {
 		parts := strings.SplitN(key, "|", 2)
 		name := safe(parts[0])
 		labelName := safe(parts[1])
-
-		err := createSummaryTable(db, driverName, name, labelName)
+		err := createCountsTable(db, driverName, name, labelName)
+		if err != nil {
+			return fmt.Errorf("create counts table: %v", err)
+		}
+		err = createSummaryTable(db, driverName, name, labelName)
 		if err != nil {
 			return fmt.Errorf("create summary table: %v", err)
 		}
@@ -253,6 +390,10 @@ func createTables(db *sql.DB, driverName string, stats *statistics.Statistics) e
 		err = createTotalsTable(db, driverName, name)
 		if err != nil {
 			return fmt.Errorf("create totals table: %v", err)
+		}
+		err = createTotalCountsTable(db, driverName, name)
+		if err != nil {
+			return fmt.Errorf("create total counts table: %v", err)
 		}
 	}
 	return nil
@@ -268,7 +409,11 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 		switch driverName {
 		case "mysql":
 			datetime := now.Format("2006-01-02 15:04:05") // mysql format
-			err := insertSummaryMysql(txn, ss, name, labelName, datetime)
+			err := insertCountsMysql(txn, ss, name, labelName, datetime)
+			if err != nil {
+				return err
+			}
+			err = insertSummaryMysql(txn, ss, name, labelName, datetime)
 			if err != nil {
 				return err
 			}
@@ -280,9 +425,17 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 			if err != nil {
 				return err
 			}
+			err = insertTotalCountsMysql(txn, ss, name, datetime)
+			if err != nil {
+				return err
+			}
 		case "postgres":
 			datetime := now.Format(time.RFC3339)
-			err := insertSummaryPostgres(txn, ss, name, labelName, datetime)
+			err := insertCountsPostgres(txn, ss, name, labelName, datetime)
+			if err != nil {
+				return err
+			}
+			err = insertSummaryPostgres(txn, ss, name, labelName, datetime)
 			if err != nil {
 				return err
 			}
@@ -291,6 +444,10 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 				return err
 			}
 			err = insertTotalsPostgres(txn, ss, name, datetime)
+			if err != nil {
+				return err
+			}
+			err = insertTotalCountsPostgres(txn, ss, name, datetime)
 			if err != nil {
 				return err
 			}

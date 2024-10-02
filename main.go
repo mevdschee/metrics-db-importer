@@ -463,11 +463,19 @@ func deleteRecords(db *sql.DB, driverName string, stats *statistics.Statistics, 
 		name := safe(parts[0])
 		labelName := safe(parts[1])
 
-		deleteSql := fmt.Sprintf("DELETE FROM \"%s_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
+		deleteSql := fmt.Sprintf("DELETE FROM \"%s_count_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
 		if driverName == "mysql" {
 			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
 		}
 		_, err := db.Exec(deleteSql)
+		if err != nil {
+			return err
+		}
+		deleteSql = fmt.Sprintf("DELETE FROM \"%s_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
+		if driverName == "mysql" {
+			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
+		}
+		_, err = db.Exec(deleteSql)
 		if err != nil {
 			return err
 		}
@@ -480,6 +488,14 @@ func deleteRecords(db *sql.DB, driverName string, stats *statistics.Statistics, 
 			return err
 		}
 		deleteSql = fmt.Sprintf("DELETE FROM \"%s_totals\" WHERE \"time\" < '%s';", name, datetime)
+		if driverName == "mysql" {
+			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
+		}
+		_, err = db.Exec(deleteSql)
+		if err != nil {
+			return err
+		}
+		deleteSql = fmt.Sprintf("DELETE FROM \"%s_count_totals\" WHERE \"time\" < '%s';", name, datetime)
 		if driverName == "mysql" {
 			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
 		}

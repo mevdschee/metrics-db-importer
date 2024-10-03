@@ -45,7 +45,7 @@ func createCountsTable(db *sql.DB, driverName, name, labelName string) error {
 func insertCountsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_count_by_%s` (`time`, `%s`, `count`) VALUES ", name, labelName, labelName)
 	vals := []interface{}{}
-	for labelValue, count := range ss.Counts {
+	for labelValue, count := range ss.Counters {
 		sqlStr += "(?, ?, ?),"
 		vals = append(vals, datetime, labelValue, count)
 	}
@@ -73,7 +73,7 @@ func insertCountsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, labelNa
 	if err != nil {
 		return err
 	}
-	for labelValue, count := range ss.Counts {
+	for labelValue, count := range ss.Counters {
 		_, err = stmt.Exec(datetime, labelValue, count)
 		if err != nil {
 			return err
@@ -116,7 +116,7 @@ func createSummaryTable(db *sql.DB, driverName, name, labelName string) error {
 func insertSummaryMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_by_%s` (`time`, `%s`, `duration`, `count`) VALUES ", name, labelName, labelName)
 	vals := []interface{}{}
-	for labelValue, count := range ss.Counters {
+	for labelValue, count := range ss.Measures {
 		duration := ss.Durations[labelValue]
 		sqlStr += "(?, ?, ?, ?),"
 		vals = append(vals, datetime, labelValue, duration, count)
@@ -145,7 +145,7 @@ func insertSummaryPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, labelN
 	if err != nil {
 		return err
 	}
-	for labelValue, count := range ss.Counters {
+	for labelValue, count := range ss.Measures {
 		duration := ss.Durations[labelValue]
 		_, err = stmt.Exec(datetime, labelValue, duration, count)
 		if err != nil {
@@ -265,7 +265,7 @@ func insertTotalsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, datetime s
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_totals` (`time`, `duration`, `count`) VALUES (?, ?, ?)", name)
 	totalCount := uint64(0)
 	totalDuration := float64(0)
-	for labelValue, count := range ss.Counters {
+	for labelValue, count := range ss.Measures {
 		duration := ss.Durations[labelValue]
 		totalDuration += duration
 		totalCount += count
@@ -292,7 +292,7 @@ func insertTotalsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, datetim
 	}
 	totalCount := uint64(0)
 	totalDuration := float64(0)
-	for labelValue, count := range ss.Counters {
+	for labelValue, count := range ss.Measures {
 		duration := ss.Durations[labelValue]
 		totalDuration += duration
 		totalCount += count
@@ -317,13 +317,13 @@ func createTables(db *sql.DB, driverName string, stats *statistics.Statistics) e
 		parts := strings.SplitN(key, "|", 2)
 		name := safe(parts[0])
 		labelName := safe(parts[1])
-		if len(ss.Counts) > 0 {
+		if len(ss.Counters) > 0 {
 			err := createCountsTable(db, driverName, name, labelName)
 			if err != nil {
 				return fmt.Errorf("create counts table: %v", err)
 			}
 		}
-		if len(ss.Counters) > 0 {
+		if len(ss.Measures) > 0 {
 			err := createSummaryTable(db, driverName, name, labelName)
 			if err != nil {
 				return fmt.Errorf("create summary table: %v", err)
@@ -351,13 +351,13 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 		switch driverName {
 		case "mysql":
 			datetime := now.Format("2006-01-02 15:04:05") // mysql format
-			if len(ss.Counts) > 0 {
+			if len(ss.Counters) > 0 {
 				err := insertCountsMysql(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
 				}
 			}
-			if len(ss.Counters) > 0 {
+			if len(ss.Measures) > 0 {
 				err := insertSummaryMysql(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
@@ -373,13 +373,13 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 			}
 		case "postgres":
 			datetime := now.Format(time.RFC3339)
-			if len(ss.Counts) > 0 {
+			if len(ss.Counters) > 0 {
 				err := insertCountsPostgres(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
 				}
 			}
-			if len(ss.Counters) > 0 {
+			if len(ss.Measures) > 0 {
 				err := insertSummaryPostgres(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
@@ -400,50 +400,46 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 
 func deleteRecords(db *sql.DB, driverName string, stats *statistics.Statistics, retentionInDays int) error {
 	datetime := time.Now().AddDate(0, 0, -1*retentionInDays).Format(time.RFC3339)
-	for key := range stats.Names {
+	for key, ss := range stats.Names {
 		parts := strings.SplitN(key, "|", 2)
 		name := safe(parts[0])
 		labelName := safe(parts[1])
 
-		deleteSql := fmt.Sprintf("DELETE FROM \"%s_count_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
-		if driverName == "mysql" {
-			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
+		if len(ss.Counters) > 0 {
+			deleteSql := fmt.Sprintf("DELETE FROM \"%s_count_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
+			if driverName == "mysql" {
+				deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
+			}
+			_, err := db.Exec(deleteSql)
+			if err != nil {
+				return err
+			}
 		}
-		_, err := db.Exec(deleteSql)
-		if err != nil {
-			return err
-		}
-		deleteSql = fmt.Sprintf("DELETE FROM \"%s_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
-		if driverName == "mysql" {
-			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
-		}
-		_, err = db.Exec(deleteSql)
-		if err != nil {
-			return err
-		}
-		deleteSql = fmt.Sprintf("DELETE FROM \"%s_histogram\" WHERE \"time\" < '%s';", name, datetime)
-		if driverName == "mysql" {
-			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
-		}
-		_, err = db.Exec(deleteSql)
-		if err != nil {
-			return err
-		}
-		deleteSql = fmt.Sprintf("DELETE FROM \"%s_totals\" WHERE \"time\" < '%s';", name, datetime)
-		if driverName == "mysql" {
-			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
-		}
-		_, err = db.Exec(deleteSql)
-		if err != nil {
-			return err
-		}
-		deleteSql = fmt.Sprintf("DELETE FROM \"%s_count_totals\" WHERE \"time\" < '%s';", name, datetime)
-		if driverName == "mysql" {
-			deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
-		}
-		_, err = db.Exec(deleteSql)
-		if err != nil {
-			return err
+		if len(ss.Measures) > 0 {
+			deleteSql := fmt.Sprintf("DELETE FROM \"%s_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
+			if driverName == "mysql" {
+				deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
+			}
+			_, err := db.Exec(deleteSql)
+			if err != nil {
+				return err
+			}
+			deleteSql = fmt.Sprintf("DELETE FROM \"%s_histogram\" WHERE \"time\" < '%s';", name, datetime)
+			if driverName == "mysql" {
+				deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
+			}
+			_, err = db.Exec(deleteSql)
+			if err != nil {
+				return err
+			}
+			deleteSql = fmt.Sprintf("DELETE FROM \"%s_totals\" WHERE \"time\" < '%s';", name, datetime)
+			if driverName == "mysql" {
+				deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
+			}
+			_, err = db.Exec(deleteSql)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

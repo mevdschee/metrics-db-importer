@@ -116,7 +116,7 @@ func createSummaryTable(db *sql.DB, driverName, name, labelName string) error {
 func insertSummaryMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_by_%s` (`time`, `%s`, `duration`, `count`) VALUES ", name, labelName, labelName)
 	vals := []interface{}{}
-	for labelValue, count := range ss.Measures {
+	for labelValue, count := range ss.Measurements {
 		duration := ss.Durations[labelValue]
 		sqlStr += "(?, ?, ?, ?),"
 		vals = append(vals, datetime, labelValue, duration, count)
@@ -145,7 +145,7 @@ func insertSummaryPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, labelN
 	if err != nil {
 		return err
 	}
-	for labelValue, count := range ss.Measures {
+	for labelValue, count := range ss.Measurements {
 		duration := ss.Durations[labelValue]
 		_, err = stmt.Exec(datetime, labelValue, duration, count)
 		if err != nil {
@@ -265,7 +265,7 @@ func insertTotalsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, datetime s
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_totals` (`time`, `duration`, `count`) VALUES (?, ?, ?)", name)
 	totalCount := uint64(0)
 	totalDuration := float64(0)
-	for labelValue, count := range ss.Measures {
+	for labelValue, count := range ss.Measurements {
 		duration := ss.Durations[labelValue]
 		totalDuration += duration
 		totalCount += count
@@ -292,7 +292,7 @@ func insertTotalsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, datetim
 	}
 	totalCount := uint64(0)
 	totalDuration := float64(0)
-	for labelValue, count := range ss.Measures {
+	for labelValue, count := range ss.Measurements {
 		duration := ss.Durations[labelValue]
 		totalDuration += duration
 		totalCount += count
@@ -323,7 +323,7 @@ func createTables(db *sql.DB, driverName string, stats *statistics.Statistics) e
 				return fmt.Errorf("create counts table: %v", err)
 			}
 		}
-		if len(ss.Measures) > 0 {
+		if len(ss.Measurements) > 0 {
 			err := createSummaryTable(db, driverName, name, labelName)
 			if err != nil {
 				return fmt.Errorf("create summary table: %v", err)
@@ -357,7 +357,7 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 					return err
 				}
 			}
-			if len(ss.Measures) > 0 {
+			if len(ss.Measurements) > 0 {
 				err := insertSummaryMysql(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
@@ -379,7 +379,7 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 					return err
 				}
 			}
-			if len(ss.Measures) > 0 {
+			if len(ss.Measurements) > 0 {
 				err := insertSummaryPostgres(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
@@ -415,7 +415,7 @@ func deleteRecords(db *sql.DB, driverName string, stats *statistics.Statistics, 
 				return err
 			}
 		}
-		if len(ss.Measures) > 0 {
+		if len(ss.Measurements) > 0 {
 			deleteSql := fmt.Sprintf("DELETE FROM \"%s_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
 			if driverName == "mysql" {
 				deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")

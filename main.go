@@ -12,7 +12,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/lib/pq"
-	"github.com/mevdschee/php-observability/statistics"
+	"github.com/mevdschee/php-observability/metrics"
 )
 
 func safe(str string) string {
@@ -42,7 +42,7 @@ func createCountsTable(db *sql.DB, driverName, name, labelName string) error {
 	return nil
 }
 
-func insertCountsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
+func insertCountsMysql(txn *sql.Tx, ss metrics.MetricSet, name, labelName, datetime string) error {
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_count_by_%s` (`time`, `%s`, `count`) VALUES ", name, labelName, labelName)
 	vals := []interface{}{}
 	for labelValue, count := range ss.Counters {
@@ -68,7 +68,7 @@ func insertCountsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName,
 	return nil
 }
 
-func insertCountsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
+func insertCountsPostgres(txn *sql.Tx, ss metrics.MetricSet, name, labelName, datetime string) error {
 	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf("%s_count_by_%s", name, labelName), "time", labelName, "count"))
 	if err != nil {
 		return err
@@ -113,11 +113,11 @@ func createSummaryTable(db *sql.DB, driverName, name, labelName string) error {
 	return nil
 }
 
-func insertSummaryMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
+func insertSummaryMysql(txn *sql.Tx, ss metrics.MetricSet, name, labelName, datetime string) error {
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_by_%s` (`time`, `%s`, `duration`, `count`) VALUES ", name, labelName, labelName)
 	vals := []interface{}{}
-	for labelValue, count := range ss.Measurements {
-		duration := ss.Durations[labelValue]
+	for labelValue, count := range ss.DurationCounts {
+		duration := ss.DurationSums[labelValue]
 		sqlStr += "(?, ?, ?, ?),"
 		vals = append(vals, datetime, labelValue, duration, count)
 	}
@@ -140,13 +140,13 @@ func insertSummaryMysql(txn *sql.Tx, ss statistics.StatisticSet, name, labelName
 	return nil
 }
 
-func insertSummaryPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, labelName, datetime string) error {
+func insertSummaryPostgres(txn *sql.Tx, ss metrics.MetricSet, name, labelName, datetime string) error {
 	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf("%s_by_%s", name, labelName), "time", labelName, "duration", "count"))
 	if err != nil {
 		return err
 	}
-	for labelValue, count := range ss.Measurements {
-		duration := ss.Durations[labelValue]
+	for labelValue, count := range ss.DurationCounts {
+		duration := ss.DurationSums[labelValue]
 		_, err = stmt.Exec(datetime, labelValue, duration, count)
 		if err != nil {
 			return err
@@ -186,7 +186,7 @@ func createHistogramTable(db *sql.DB, driverName string, name string) error {
 	return nil
 }
 
-func insertHistogramMysql(txn *sql.Tx, ss statistics.StatisticSet, buckets []statistics.Bucket, name, datetime string) error {
+func insertHistogramMysql(txn *sql.Tx, ss metrics.MetricSet, buckets []metrics.Bucket, name, datetime string) error {
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_histogram` (`time`, `duration`, `count`) VALUES ", name)
 	vals := []interface{}{}
 	for _, b := range buckets {
@@ -214,7 +214,7 @@ func insertHistogramMysql(txn *sql.Tx, ss statistics.StatisticSet, buckets []sta
 	return nil
 }
 
-func insertHistogramPostgres(txn *sql.Tx, ss statistics.StatisticSet, buckets []statistics.Bucket, name, datetime string) error {
+func insertHistogramPostgres(txn *sql.Tx, ss metrics.MetricSet, buckets []metrics.Bucket, name, datetime string) error {
 	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf("%s_histogram", name), "time", "duration", "count"))
 	if err != nil {
 		log.Fatal(err)
@@ -261,12 +261,12 @@ func createTotalsTable(db *sql.DB, driverName string, name string) error {
 	return nil
 }
 
-func insertTotalsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, datetime string) error {
+func insertTotalsMysql(txn *sql.Tx, ss metrics.MetricSet, name, datetime string) error {
 	sqlStr := fmt.Sprintf("INSERT INTO `%s_totals` (`time`, `duration`, `count`) VALUES (?, ?, ?)", name)
 	totalCount := uint64(0)
 	totalDuration := float64(0)
-	for labelValue, count := range ss.Measurements {
-		duration := ss.Durations[labelValue]
+	for labelValue, count := range ss.DurationCounts {
+		duration := ss.DurationSums[labelValue]
 		totalDuration += duration
 		totalCount += count
 	}
@@ -285,15 +285,15 @@ func insertTotalsMysql(txn *sql.Tx, ss statistics.StatisticSet, name, datetime s
 	return nil
 }
 
-func insertTotalsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, datetime string) error {
+func insertTotalsPostgres(txn *sql.Tx, ss metrics.MetricSet, name, datetime string) error {
 	stmt, err := txn.Prepare(pq.CopyIn(fmt.Sprintf("%s_totals", name), "time", "duration", "count"))
 	if err != nil {
 		return err
 	}
 	totalCount := uint64(0)
 	totalDuration := float64(0)
-	for labelValue, count := range ss.Measurements {
-		duration := ss.Durations[labelValue]
+	for labelValue, count := range ss.DurationCounts {
+		duration := ss.DurationSums[labelValue]
 		totalDuration += duration
 		totalCount += count
 	}
@@ -312,7 +312,7 @@ func insertTotalsPostgres(txn *sql.Tx, ss statistics.StatisticSet, name, datetim
 	return nil
 }
 
-func createTables(db *sql.DB, driverName string, stats *statistics.Statistics) error {
+func createTables(db *sql.DB, driverName string, stats *metrics.Metrics) error {
 	for key, ss := range stats.Names {
 		parts := strings.SplitN(key, "|", 2)
 		name := safe(parts[0])
@@ -323,7 +323,7 @@ func createTables(db *sql.DB, driverName string, stats *statistics.Statistics) e
 				return fmt.Errorf("create counts table: %v", err)
 			}
 		}
-		if len(ss.Measurements) > 0 {
+		if len(ss.DurationCounts) > 0 {
 			err := createSummaryTable(db, driverName, name, labelName)
 			if err != nil {
 				return fmt.Errorf("create summary table: %v", err)
@@ -341,7 +341,7 @@ func createTables(db *sql.DB, driverName string, stats *statistics.Statistics) e
 	return nil
 }
 
-func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics) error {
+func insertRecords(txn *sql.Tx, driverName string, stats *metrics.Metrics) error {
 	now := time.Now()
 	for key, ss := range stats.Names {
 		parts := strings.SplitN(key, "|", 2)
@@ -357,7 +357,7 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 					return err
 				}
 			}
-			if len(ss.Measurements) > 0 {
+			if len(ss.DurationCounts) > 0 {
 				err := insertSummaryMysql(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
@@ -379,7 +379,7 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 					return err
 				}
 			}
-			if len(ss.Measurements) > 0 {
+			if len(ss.DurationCounts) > 0 {
 				err := insertSummaryPostgres(txn, ss, name, labelName, datetime)
 				if err != nil {
 					return err
@@ -398,7 +398,7 @@ func insertRecords(txn *sql.Tx, driverName string, stats *statistics.Statistics)
 	return nil
 }
 
-func deleteRecords(db *sql.DB, driverName string, stats *statistics.Statistics, retentionInDays int) error {
+func deleteRecords(db *sql.DB, driverName string, stats *metrics.Metrics, retentionInDays int) error {
 	datetime := time.Now().AddDate(0, 0, -1*retentionInDays).Format(time.RFC3339)
 	for key, ss := range stats.Names {
 		parts := strings.SplitN(key, "|", 2)
@@ -415,7 +415,7 @@ func deleteRecords(db *sql.DB, driverName string, stats *statistics.Statistics, 
 				return err
 			}
 		}
-		if len(ss.Measurements) > 0 {
+		if len(ss.DurationCounts) > 0 {
 			deleteSql := fmt.Sprintf("DELETE FROM \"%s_by_%s\" WHERE \"time\" < '%s'", name, labelName, datetime)
 			if driverName == "mysql" {
 				deleteSql = strings.ReplaceAll(deleteSql, "\"", "`")
@@ -445,7 +445,7 @@ func deleteRecords(db *sql.DB, driverName string, stats *statistics.Statistics, 
 	return nil
 }
 
-func updateDatabase(driverName, dataSourceName string, stats *statistics.Statistics, retentionInDays int) error {
+func updateDatabase(driverName, dataSourceName string, stats *metrics.Metrics, retentionInDays int) error {
 	db, err := sql.Open(driverName, dataSourceName)
 	if err != nil {
 		log.Fatalf("cannot connect: %v", err)
@@ -484,7 +484,7 @@ func updateDatabase(driverName, dataSourceName string, stats *statistics.Statist
 	return err
 }
 
-func getMetrics(url string) (*statistics.Statistics, error) {
+func getMetrics(url string) (*metrics.Metrics, error) {
 	resp, err := http.Get(url)
 	if err != nil {
 		return nil, fmt.Errorf("http get: %v", err)
@@ -494,7 +494,7 @@ func getMetrics(url string) (*statistics.Statistics, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("http status: %v", resp.StatusCode)
 	}
-	s := statistics.New()
+	s := metrics.New()
 	err = s.ReadGob(resp)
 	if err != nil {
 		return nil, fmt.Errorf("http read body: %v", err)

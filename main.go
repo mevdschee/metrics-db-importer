@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
+	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -503,6 +505,8 @@ func getMetrics(url string) (*metrics.Metrics, error) {
 }
 
 func main() {
+	cpuprofile := flag.String("cpuprofile", "", "write cpu profile to file")
+	//memprofile := flag.String("memprofile", "", "write mem profile to file")
 	urlToScrape := flag.String("scrape", "http://localhost:9999/", "single URL to scrape for Gob metrics")
 	scrapeEvery := flag.Duration("every", 1*time.Second, "seconds to wait between scrape requests")
 	retentionInDays := flag.Int("retention", 30, "retention in days")
@@ -510,7 +514,14 @@ func main() {
 	//dataSourceName := flag.String("dsn", "dbname=metrics sslmode=disable user=metrics password=metrics search_path=public", "dsn for the driver, see go sql documentation")
 	dataSourceName := flag.String("dsn", "metrics:metrics@unix(/var/run/mysqld/mysqld.sock)/metrics", "dsn for the driver, see go sql documentation")
 	flag.Parse()
-
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
 	ticker := time.NewTicker(*scrapeEvery)
 	for range ticker.C {
 		stats, err := getMetrics(*urlToScrape)
